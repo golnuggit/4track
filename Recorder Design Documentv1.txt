@@ -1,0 +1,224 @@
+Below is a final revised design document reflecting the ability to adjust the BPM of the four-beat count-in and confirming no live mic monitoring is needed. All other details remain the same.
+
+⸻
+
+Four-Track Web Audio Recorder - Final Design Document
+
+1. Introduction
+
+Objective
+Create a four-track audio recorder in the browser with the following capabilities:
+	1.	Record up to four separate audio tracks using the device’s microphone.
+	2.	Playback the combined audio from all tracks.
+	3.	Monitor previously recorded tracks while recording a new one (to stay in sync).
+	4.	Export (“bounce”) the combined audio into a single audio file (WAV or optionally MP3).
+	5.	Adjust volume and stereo panning for each track.
+	6.	Re-record any track from the start (no overdubs or punch-ins).
+	7.	Four-beat count-in before each recording, with a configurable BPM (default 120 BPM, for example).
+	8.	No real-time mic monitoring of the new track input (only previously recorded tracks are heard during recording).
+
+Scope
+	•	Minimal UI: Four tracks, each with Record, Stop, Play, volume, and pan controls.
+	•	Plain HTML/CSS/JS for simplicity.
+	•	Basic “metronome-like” count-in prior to recording, for exactly four beats at a user-adjustable BPM.
+
+⸻
+
+2. Project Requirements & Constraints
+	1.	Browser Compatibility
+	•	Must run in modern browsers using the Web Audio API (AudioContext) and mic capture (getUserMedia).
+	2.	Audio Latency
+	•	Minor latency is acceptable.
+	3.	File Format
+	•	Primary export: WAV (uncompressed).
+	•	Optional: MP3 export if desired (requires an in-browser MP3 encoder library).
+	4.	Data Storage
+	•	All recordings in memory (no server).
+	5.	No Overdubs / Punch-ins
+	•	Re-recording overwrites the entire track from time zero.
+	6.	Four-Beat Count-In
+	•	Before recording begins, play four beats at a user-adjustable BPM (default 120 BPM).
+	•	After the fourth beat, start recording and simultaneously play all previously recorded tracks from 0:00.
+	•	No continuous metronome beyond the initial four clicks.
+	7.	No Live Mic Monitoring
+	•	During recording, the user only hears existing tracks; their own mic input is not routed to the output.
+
+⸻
+
+3. High-Level Architecture
+
++-------------------------+
+|         Browser         |
+|   (HTML / CSS / JS)     |
++-----------+-------------+
+            |
+            v
++-------------------------+
+| Web Audio API &         |
+| getUserMedia            |
++-------------------------+
+            |
+            v
++-------------------------+
+|  In-Memory Track        |
+|   Storage (AudioBuffer) |
++-------------------------+
+            |
+            v
++-------------------------+
+|    Mixdown Engine       |
+| (OfflineAudioContext)   |
+|   for final export      |
++-------------------------+
+            |
+            v
++-------------------------+
+|  Export as WAV or MP3   |
++-------------------------+
+
+	1.	UI Layer
+	•	Four tracks with basic controls + adjustable BPM for the count-in.
+	2.	Audio Processing
+	•	One global AudioContext.
+	•	Each track has an AudioBuffer plus a gainNode and pannerNode.
+	3.	Mixdown / Export
+	•	Use an OfflineAudioContext for a final bounce.
+	4.	Four-Beat Count-In
+	•	A short metronome beep or click repeated four times, spaced according to BPM (60 / BPM seconds).
+
+⸻
+
+4. Detailed Feature Breakdown
+
+4.1 Adjustable BPM Four-Beat Count-In
+	•	Flow:
+	1.	When a user clicks “Record,” delay the actual recording by 4 beats.
+	2.	Each beat interval = (60 / BPM) seconds. Default BPM = 120.
+	3.	Play a short beep at each beat boundary (could be a small audio file or an oscillator beep).
+	4.	After the fourth beep, start recording this track at 0:00, and start all previously recorded tracks at 0:00.
+	•	Implementation:
+	•	A small “CountInController” function that takes bpm as input, calculates timing, and triggers beep playback.
+	•	Provide a simple input field or slider in the UI for the user to adjust BPM (if desired).
+
+4.2 Track Recording / Re-Recording
+	•	Flow:
+	1.	User presses “Record” on a track.
+	2.	The count-in begins (Section 4.1).
+	3.	After 4 beats, the track’s MediaRecorder starts capturing, and old tracks playback from the start.
+	4.	Stopping the recording finalizes an AudioBuffer. If the track was previously recorded, that old buffer is discarded.
+
+4.3 Playback
+	•	Individual Track Playback:
+	•	Each track can be played from 0:00.
+	•	Play All:
+	•	All tracks are scheduled together so they remain synchronized.
+
+4.4 Volume & Panning
+	•	Each track has a gainNode and a StereoPannerNode.
+	•	The user can adjust them in real time before or during playback.
+
+4.5 Mixdown & Export
+	•	OfflineAudioContext approach to render all tracks into a single stereo buffer.
+	•	Encode to WAV (or MP3 if the user chooses that option).
+	•	Present a download link to the user.
+
+⸻
+
+5. Core Components
+	1.	AudioContextManager
+	•	Creates and holds a global AudioContext.
+	•	Utility methods to generate beeps or load small beep audio files for count-in.
+	2.	Track Object
+	•	Properties:
+	•	id, audioBuffer, gainNode, pannerNode, isRecording, isPlaying
+	•	Methods:
+	•	startCountInAndRecord(bpm): Initiates 4-beat count-in at the chosen BPM, then starts recording.
+	•	stopRecording(): Finalizes the recording into audioBuffer.
+	•	startPlayback(), stopPlayback().
+	•	applyVolume(value), applyPan(value).
+	3.	UI (HTML/CSS/JS)
+	•	BPM Input: A small input (text or number) or slider labeled “Count-In BPM.” Defaults to 120.
+	•	Track Rows: Buttons for Record, Stop, Play, plus volume & pan sliders.
+	•	Master Controls: Export / Download button, Play All / Stop All.
+	4.	CountInController
+	•	Takes bpm and the desired number of beats (4) as inputs.
+	•	Calculates interval = 60 / bpm.
+	•	Plays beep at each beat boundary (e.g., beep at 0, beep at interval, beep at 2interval, beep at 3interval).
+	•	When done, triggers the actual track recording and track playback.
+	5.	MixdownEngine
+	•	Uses OfflineAudioContext to sum all tracks.
+	•	Exports a WAV or MP3 file.
+
+⸻
+
+6. UI / UX Outline
+	1.	Layout
+	•	A field or slider near the top for “Count-In BPM” (default 120).
+	•	Four track rows, each with:
+	•	Record, Stop, Play
+	•	Volume slider
+	•	Pan slider
+	•	Master section (e.g., Play All, Export).
+	2.	Count-In Feedback
+	•	When “Record” is pressed, show a short text message or countdown (e.g., 4,3,2,1).
+	•	No beep needed after the four count-in beats.
+	3.	No Mic Monitoring
+	•	The user only hears the existing recorded tracks, not their own mic input.
+
+⸻
+
+7. Implementation Plan (Step-by-Step)
+	1.	UI Setup
+	•	Create index.html with BPM input, track sections, and minimal CSS.
+	2.	AudioContext & Beep Sound
+	•	Initialize audioCtx.
+	•	Either generate a beep with an oscillator or load a small pre-recorded click sound.
+	3.	Track Objects
+	•	For each of the four tracks, define gainNode, pannerNode, and placeholders for audioBuffer.
+	4.	Count-In Implementation
+	•	Implement a function startCountIn(bpm, onCountInComplete) that:
+	•	Schedules 4 beeps at intervals of (60/bpm) seconds.
+	•	After the fourth beep, calls onCountInComplete().
+	5.	Recording Logic
+	•	In startCountInAndRecord(), do:
+	•	startCountIn(bpm, () => { startMediaRecorder(); startPlaybackOfOtherTracks(); }).
+	•	stopRecording() stops the MediaRecorder and decodes chunks into audioBuffer.
+	6.	Playback
+	•	For “Play” on a single track, create a buffer source → connect gain/pan → audioCtx.destination.
+	•	For “Play All,” do the same for all tracks simultaneously.
+	7.	Volume & Pan
+	•	Hook up event listeners to sliders that directly modify gainNode.gain.value or pannerNode.pan.value.
+	8.	Mixdown & Export
+	•	Implement an exportMix() function:
+	•	Create OfflineAudioContext(2, length, sampleRate).
+	•	For each track, connect gainNode → pannerNode → offline context destination.
+	•	Render, then encode to WAV or MP3.
+	•	Provide a download link when done.
+
+⸻
+
+8. Edge Cases & Additional Considerations
+	1.	Adjustable BPM
+	•	Provide a default of 120 BPM and allow user changes.
+	•	Validate user input (e.g., 40–300 BPM range).
+	2.	No Ongoing Click Track
+	•	Only four clicks for the count-in, then silence (unless the user re-records).
+	3.	Microphone Permissions
+	•	Display error if access is denied.
+	4.	Canceling During Count-In
+	•	If user hits “Stop” while count-in is playing, abort.
+	5.	File Size / MP3
+	•	Large recordings = large WAV. The optional MP3 path may be beneficial.
+	6.	Mobile Devices
+	•	Ensure user-gesture requirements are met (e.g., user must tap to start audio context).
+
+⸻
+
+9. Conclusion
+
+This revised document accommodates:
+	•	A variable BPM for the four-beat count-in (default 120).
+	•	No mic monitoring of the user’s own input.
+	•	Otherwise, it retains the previously described design for re-recording from time zero, simple volume/pan controls, and optional WAV/MP3 export.
+
+Next Steps: Hand off this document to your coding assistant for implementation, proceeding with the outlined step-by-step approach (UI setup → count-in logic → recording → playback → volume/pan → mixdown/export). If any further refinements arise, feel free to follow up.
